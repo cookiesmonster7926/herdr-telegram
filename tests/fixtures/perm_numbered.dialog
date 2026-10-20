@@ -1,0 +1,5 @@
+等你批准：Bash command
+印出清單
+<pre>cat &lt;&lt;'X'
+1. 這行是指令內容，不是選項
+X</pre>

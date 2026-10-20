@@ -1,0 +1,3 @@
+$ make build
+error: something failed
+Continue? [y/N]

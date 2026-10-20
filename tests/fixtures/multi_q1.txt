@@ -1,0 +1,27 @@
+
+ ▐▛███▛█   Claude Code v2.1.304
+▝▜██████▀  Haiku 5.5 · Claude Max
+ ▝▝   ▝▝   ~/projects/demo
+
+
+❯ 這是介面測試。不要讀檔、不要說明，立刻呼叫 AskUserQuestion 一次，questions
+  帶兩題：第一題 header「顏色」question「你喜歡哪個顏色？」multiSelect
+  false，選項 紅（描述：熱情的顏色）、綠（描述：自然的顏色）、藍（描述：冷靜的
+  顏色）；第二題 header「水果」question「要帶哪些水果？」multiSelect true，選項
+  蘋果（描述：耐放）、香蕉（描述：容易壓爛）、橘子（描述：要剝皮）。
+────────────────────────────────────────────────────────────────────────────────
+←  ☐ 顏色  ☐ 水果  ✔ Submit  →
+
+你喜歡哪個顏色？
+
+❯ 1. 紅
+     熱情的顏色
+  2. 綠
+     自然的顏色
+  3. 藍
+     冷靜的顏色
+  4. Type something.
+────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel

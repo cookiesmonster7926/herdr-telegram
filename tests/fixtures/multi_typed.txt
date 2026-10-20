@@ -1,0 +1,28 @@
+
+ ▐▛███▛█   Claude Code v2.1.304
+▝▜██████▀  Haiku 5.5 · Claude Max
+ ▝▝   ▝▝   ~/projects/demo
+
+
+❯ 這是介面測試。不要讀檔、不要說明，立刻呼叫 AskUserQuestion 一次，questions
+  帶兩題：第一題 header「水果」question「要帶哪些水果？」multiSelect true，選項
+  蘋果（描述：耐放）、香蕉（描述：容易壓爛）、橘子（描述：要剝皮）；第二題
+  header「飲料」question「喝什麼？」multiSelect false，選項
+  水、茶。使用者回答後只回一句「收到」加上答案原文，不要再呼叫任何工具。
+────────────────────────────────────────────────────────────────────────────────
+←  ☒ 水果  ☐ 飲料  ✔ Submit  →
+
+要帶哪些水果？
+
+  1. [ ] 蘋果
+         耐放
+  2. [✔] 香蕉
+         容易壓爛
+❯ 3. [✔] 橘子
+         要剝皮
+  4. [✔] 西瓜
+     Next
+────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel

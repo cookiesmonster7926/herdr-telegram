@@ -1,0 +1,16 @@
+id = "herdr-telegram"
+name = "herdr-telegram"
+version = "1.0.0"
+min_herdr_version = "0.9.0"
+description = "Telegram notification when an agent waits on you, with buttons to answer it from your phone"
+platforms = ["macos", "windows"]
+
+[[events]]
+on = "pane.agent_status_changed"
+platforms = ["macos"]
+command = ["sh", "notify.sh"]
+
+[[events]]
+on = "pane.agent_status_changed"
+platforms = ["windows"]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "notify.ps1"]

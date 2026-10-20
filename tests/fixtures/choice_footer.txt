@@ -1,0 +1,9 @@
+──────────────────────────────
+ ☐ 顏色
+│ 選一個顏色
+❯ 1. 紅
+     暖色
+  2. 藍
+     冷色
+Enter to select · ↑/↓ to navigate · Esc to
+cancel

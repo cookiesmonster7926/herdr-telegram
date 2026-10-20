@@ -1,0 +1,15 @@
+⏺ 印出 sudo 版本（用來觸發權限詢問）
+  ⎿  $ sudo -V
+──────────────────────────────────────
+ Bash command
+ 印出 sudo 版本（用來觸發權限詢問）
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ sudo -V
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ │ Hook PreToolUse:Bash requires confirmation for this command:
+ │ `sudo -V` 用到 sudo，請確認後再執行。 [settings]
+ settings.json to update hooks
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+ Esc to cancel · Tab to amend
