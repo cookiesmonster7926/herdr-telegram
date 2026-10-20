@@ -1,6 +1,9 @@
 # Turns a herdr "visible" snapshot of a blocked agent into Telegram HTML.
 # Output line 1 is the headline (already escaped); the rest is the message body.
 # With -v part=options it prints instead the options that may become buttons, one per line.
+# -v lang=en words the parts this script adds in English; the screen's own text is never
+# translated. Without it the wording is Traditional Chinese, which is also what fingerprints use.
+function L(zh, en) { return lang == "en" ? en : zh }
 function esc(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); return s }
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 function unbar(s) { s = trim(s); sub(/^│ ?/, "", s); sub(/^❯ */, "", s); return s }
@@ -53,11 +56,11 @@ function options(s, permit,   i, t, on, multi, k, m, opts, keep) {
     opts[++k] = t; keep[k] = !(t ~ /ask again|[Aa]lways/ || freeform(t))
   }
   for (m = 1; m <= k; m++) if (keep[m]) print opts[m]
-  if (multi) print "t. 這題選好了 →"
+  if (multi) print "t. " L("這題選好了 →", "Done with this question →")
 }
 
 function permission(s,   i, l, sec, desc, cmd, reason, nc) {
-  print "等你批准：" esc(trim(raw[s + 1]))
+  print L("等你批准：", "Needs your approval: ") esc(trim(raw[s + 1]))
   for (i = s + 2; i <= n; i++) {
     l = raw[i]
     if (l ~ /^ *╌/) { sec++; continue }
@@ -79,13 +82,13 @@ function choice(s,   i, l, t, q, opt, desc, skip, review) {
     review = trim(raw[s + 2]) == "Review your answers"
   } else sub(/^(☐|☒|✔) */, "", t)
   # the review page lists "● question" / "→ answer" pairs, one per line
-  print review ? "等你確認答案" : "等你回答：" esc(t)
+  print review ? L("等你確認答案", "Confirm your answers") : L("等你回答：", "Waiting for your answer: ") esc(t)
   for (i = s + 2 + review; i <= n; i++) {
     l = raw[i]; t = unbar(l)
     if (t ~ /^[0-9]+\. /) {
       flush(opt, desc, skip); opt = t; desc = ""
       skip = freeform(t)
-    } else if (boxed(opt) && navrow(t)) { if (!skip) desc = "（你打的字）"; continue }
+    } else if (boxed(opt) && navrow(t)) { if (!skip) desc = L("（你打的字）", "(what you typed)"); continue }
     else if (review && t == "Ready to submit your answers?") continue
     else if (review && opt == "" && t ~ /^(●|→)/) q = q (q == "" ? "" : "\n") t
     else if (opt == "") q = glue(q, t)
@@ -102,7 +105,7 @@ function flush(opt, desc, skip) {
 }
 
 function generic(s,   i, body) {
-  print "等你處理"
+  print L("等你處理", "Waiting for you")
   for (i = s + 1; i <= n; i++) body = body (body == "" ? "" : "\n") unbar(raw[i])
   print "<blockquote expandable>" esc(body) "</blockquote>"
 }

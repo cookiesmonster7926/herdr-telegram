@@ -68,7 +68,17 @@ else
   say "✓ bot settings saved: $cfg"
 fi
 
-# 3. the listener: turns button taps and replies into key presses; restarted at login and on crashes
+# 3. the language of the messages (the agent's own text is shown as it is, whatever this says)
+if [ ! -s "$dir/language" ]; then
+  printf 'Messages in English or Traditional Chinese? [en/zh-TW] (en): '
+  read -r answer || answer=""
+  case $answer in zh*|ZH*) answer=zh-TW ;; *) answer=en ;; esac
+  printf '%s\n' "$answer" > "$dir/language"
+fi
+lang=$(cat "$dir/language")
+say "✓ language: $lang (change it in $dir/language)"
+
+# 4. the listener: turns button taps and replies into key presses; restarted at login and on crashes
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 cat > "$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -105,6 +115,9 @@ done
 say "✓ listener running (log: $log)"
 
 name=$(scutil --get ComputerName)
-api sendMessage -d chat_id="$(sed -n 2p "$cfg")" \
-  --data-urlencode text="herdr-telegram is ready on $name. When an agent waits for you, a message with buttons shows up here." \
+case $lang in
+  zh-TW) text="herdr-telegram 已經在 $name 上設定好了。agent 等你的時候，這裡會收到附按鈕的訊息。" ;;
+  *) text="herdr-telegram is ready on $name. When an agent waits for you, a message with buttons shows up here." ;;
+esac
+api sendMessage -d chat_id="$(sed -n 2p "$cfg")" --data-urlencode text="$text" \
   | grep -q '"ok":true' && say "✓ test message sent to Telegram" || say "! could not send the test message; check the token and chat id in $cfg"

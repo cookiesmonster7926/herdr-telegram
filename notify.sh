@@ -16,7 +16,13 @@ send() {
 pane=${HERDR_PANE_ID:-}
 letter=${NOTIFY_LETTER:-m}
 machine=$(printf '%s' "${NOTIFY_HERDR_MACHINE:-$(scutil --get ComputerName)}" | esc)
-head="agent $pane 需要你" meta="" body=""
+# the `language` file next to `telegram`: zh-TW (or zh) for Traditional Chinese, else English
+case $(head -n 1 "${HERDR_PLUGIN_CONFIG_DIR:-.}/language" 2>/dev/null | tr -d '[:space:]') in
+  zh-TW | zh) lang=zh ;;
+  *) lang=en ;;
+esac
+L() { if [ "$lang" = en ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
+head="agent $pane $(L 需要你 'needs you')" meta="" body=""
 if info=$(hd agent get "$pane" 2>/dev/null); then
   # the event also fires when leaving blocked; only notify if the agent is blocked right now
   [ "$(printf '%s' "$info" | jq -r '.result.agent.agent_status')" = blocked ] || exit 0
@@ -25,17 +31,19 @@ if info=$(hd agent get "$pane" 2>/dev/null); then
   cwd=$(printf '%s' "$info" | jq -r '.result.agent.cwd // empty')
   title=$(printf '%s' "$info" | jq -r '.result.agent.terminal_title_stripped // empty')
   tab_label=$(hd tab list --workspace "$ws" 2>/dev/null | jq -r --arg id "$tab" '.result.tabs[] | select(.tab_id == $id) | .label')
-  meta=$(printf '%s%s分頁 %s%s' "$title" "${title:+
-}" "${tab_label:-$tab}" "${cwd:+ · ${cwd##*/}}" | esc)
+  meta=$(printf '%s%s%s %s%s' "$title" "${title:+
+}" "$(L 分頁 tab)" "${tab_label:-$tab}" "${cwd:+ · ${cwd##*/}}" | esc)
   screen=$(hd agent read "$pane" --source visible 2>/dev/null)
-  dialog=$(printf '%s\n' "$screen" | awk -f "$(dirname "$0")/dialog.awk")
+  dialog=$(printf '%s\n' "$screen" | awk -v lang="$lang" -f "$(dirname "$0")/dialog.awk")
   if [ -n "$dialog" ]; then
     head=$(printf '%s\n' "$dialog" | sed -n 1p)
     body=$(printf '%s\n' "$dialog" | sed 1d)
     # one button per option: a1|machine|pane|option|fingerprint (m = this Mac; see the listener);
-    # option "t" is the Tab that leaves a multi-select question
-    fp=$(printf '%s' "$dialog" | md5 | cut -c1-8)
-    markup=$(printf '%s\n' "$screen" | awk -v part=options -f "$(dirname "$0")/dialog.awk" |
+    # option "t" is "done with this multi-select question". The fingerprint is taken from the
+    # default wording, so it does not depend on the language setting of either machine
+    fp=$(printf '%s\n' "$screen" | awk -f "$(dirname "$0")/dialog.awk")
+    fp=$(printf '%s' "$fp" | md5 | cut -c1-8)
+    markup=$(printf '%s\n' "$screen" | awk -v lang="$lang" -v part=options -f "$(dirname "$0")/dialog.awk" |
       jq -R -s -c --arg pane "$pane" --arg fp "$fp" --arg m "$letter" '
         [split("\n")[] | select(length > 0)
          | [{text: sub("^t\\. "; ""), callback_data: "a1|\($m)|\($pane)|\(capture("^(?<n>[0-9]+|t)").n)|\($fp)"}]]
@@ -52,7 +60,7 @@ html() {
   case "$body" in *'</blockquote>') printf '\n%s' "$machine" ;; *) printf '\n\n%s' "$machine" ;; esac
 }
 # Telegram caps a message at 4096 characters; bytes overcount, which errs on the safe side
-[ "$(html | wc -c)" -gt 4000 ] && body="（內容太長，請到電腦上看）"
+[ "$(html | wc -c)" -gt 4000 ] && body=$(L '（內容太長，請到電腦上看）' '(Too long to show here; see it on the computer)')
 if [ -n "${NOTIFY_RENDER:-}" ]; then printf '%s\n' "${markup:-}"; html; exit 0; fi
 plain() { html | sed -e 's/<[^>]*>//g' -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&amp;/\&/g'; }
 # if the HTML or the buttons get rejected, still get the message itself through

@@ -24,6 +24,52 @@ def machines(monkeypatch):
     monkeypatch.setattr(L, "MACHINES", {"m": [], "w": ["--machine", REMOTE]})
 
 
+@pytest.fixture(autouse=True)
+def config(monkeypatch, tmp_path):
+    # the plugin config directory; the tests below read the Chinese wording unless they switch
+    d = tmp_path / "config"
+    d.mkdir()
+    (d / "language").write_text("zh-TW\n", encoding="utf-8")
+    monkeypatch.setattr(L, "CONFIG_DIR", d)
+    monkeypatch.setattr(L, "LANG", "zh-TW")
+    return d
+
+
+# --- language ---------------------------------------------------------------------------
+
+def test_both_languages_have_every_message_with_the_same_blanks():
+    zh, en = L.MESSAGES["zh-TW"], L.MESSAGES["en"]
+    assert zh.keys() == en.keys()
+    assert all(("{x}" in zh[k]) == ("{x}" in en[k]) for k in zh)
+
+
+@pytest.mark.parametrize("text, lang", [("zh-TW\n", "zh-TW"), ("zh", "zh-TW"), ("en", "en"), ("", "en"),
+                                        ("klingon", "en"), (None, "en")])
+def test_read_language_defaults_to_english(tmp_path, text, lang):
+    if text is not None:
+        (tmp_path / "language").write_text(text, encoding="utf-8")
+    assert L.read_language(tmp_path) == lang
+
+
+def test_the_done_button_is_named_in_the_language(monkeypatch):
+    monkeypatch.setattr(L, "LANG", "en")
+    h = FakeHerdr(screen_text=screen("multi_select"), after=[screen("multi_review")])
+    tg = FakeTelegram()
+    L.handle_update(callback_update(f"a1|m|wC:pE|t|{fp('multi_select')}"), OWNER, h, tg)
+    assert ("answer", "cb1", "Pressed: Done with this question →") in tg.calls
+
+
+def test_notes_follow_the_language(monkeypatch):
+    monkeypatch.setattr(L, "LANG", "en")
+    h = FakeHerdr(screen_text=screen("multi_review"), after=[screen("generic")], status_after="working")
+    tg = FakeTelegram()
+    L.handle_update(callback_update(f"a1|m|wC:pE|2|{fp('multi_review')}"), OWNER, h, tg)
+    assert "Cancelled" in next(c for c in tg.calls if c[0] == "edit")[3]
+    tg = FakeTelegram()
+    L.handle_update(callback_update(f"a1|m|wC:pE|1|{fp('choice_wide')}"), OWNER, FakeHerdr(screen_text=screen("perm")), tg)
+    assert tg.calls == [("answer", "cb1", "Not sent: the screen has changed")]
+
+
 # --- machines file --------------------------------------------------------------------
 
 def test_parse_machines_reads_letter_and_herdr_machine_name():
@@ -588,6 +634,26 @@ def test_render_builds_the_desktop_page_over_herdr_machine(tmp_path, monkeypatch
     assert [r["text"] for r in rows] == ["1. [✔] 蘋果", "2. [ ] 香蕉", "3. [✔] 橘子", "這題選好了 →"]
     assert rows[-1]["callback_data"] == f"a1|w|wC:pE|t|{fp('multi_select')}"
     assert all(line.startswith(f"--machine {REMOTE} ") for line in log.read_text().splitlines())
+
+
+def test_render_in_english_keeps_the_fingerprint(tmp_path, monkeypatch, config):
+    # the language changes the words around the screen, not the fingerprint: a Mac listener and a
+    # Windows plugin set to different languages still agree on which dialog a button belongs to
+    (config / "language").write_text("en\n", encoding="utf-8")
+    fake_herdr_bin(tmp_path, "multi_select")
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    html, markup = L.Herdr().render(L.Target("w", "wC:pE", "1", "00000000"))
+    assert html.startswith("<b>Waiting for your answer: ☒ 顏色 · ☒ 水果</b>\n測試\ntab qmp · mod-pane\n<blockquote>")
+    rows = [r[0] for r in markup["inline_keyboard"]]
+    assert rows[-1] == {"text": "Done with this question →", "callback_data": f"a1|w|wC:pE|t|{fp('multi_select')}"}
+
+
+def test_render_without_a_language_file_is_english(tmp_path, monkeypatch, config):
+    (config / "language").unlink()
+    fake_herdr_bin(tmp_path, "multi_q1")
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    html, _ = L.Herdr().render(L.Target("m", "wC:pE", "1", "00000000"))
+    assert html.startswith("<b>Waiting for your answer: ")
 
 
 def test_render_of_a_mac_agent_uses_the_local_server(tmp_path, monkeypatch):

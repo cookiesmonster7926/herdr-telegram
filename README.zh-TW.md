@@ -50,6 +50,16 @@ cd ~/herdr-telegram
 - **移除**：`./install.sh --uninstall`（設定會保留）
 - 資料夾不要搬走：背景程式就是從這裡跑的。
 
+## 語言
+
+訊息可以是**英文**或**繁體中文**，`install.sh` 會問（直接按 Enter 是英文）。之後要改，就在
+`herdr plugin config-dir herdr-telegram` 那個資料夾的 `language` 檔寫 `en` 或 `zh-TW`，再跑一次 `./install.sh`。
+
+翻譯的只有 herdr-telegram 自己加上去的字：標題（「等你回答：」）、「這題選好了 →」按鈕、「已送出答案」這類提示。
+問題、選項、指令一律照 agent 寫的原文顯示，它用什麼語言問就是什麼語言；Claude Code 自己畫的字
+（「Submit answers」「Yes」「Type something」）也維持原樣。所以設成中文、Claude 用英文問的時候，
+你會看到中文標題底下接英文問題。
+
 ## Windows（選用）
 
 Windows 上也能發通知（PowerShell 5.1）。按鈕則由 Mac 上的背景程式透過 herdr 的遠端機器功能回答。
@@ -66,7 +76,8 @@ Windows 上也能發通知（PowerShell 5.1）。按鈕則由 Mac 上的背景�
    <選填：訊息底部顯示的名稱，例如 實驗室電腦>
    <選填：這台機器的代號，一個英文小寫字母，預設 w>
    ```
-   chat id 就是 Mac 上同一個檔的第 2 行。
+   chat id 就是 Mac 上同一個檔的第 2 行。要中文訊息的話，同一個資料夾再建一個 `language` 檔，內容寫 `zh-TW`。
+   兩台機器可以設不同語言。
 3. 在 Mac 上確認 `herdr --machine <名稱> agent list` 連得到那台（見 `herdr machine add`）。
    然後在 Mac 的 `herdr plugin config-dir herdr-telegram` 裡的 `machines` 檔加一行：
    ```

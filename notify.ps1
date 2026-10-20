@@ -7,6 +7,9 @@ $token = $cfg[0].Trim(); $chat = $cfg[1].Trim()
 $machine = if ($cfg.Count -ge 3 -and $cfg[2].Trim()) { $cfg[2].Trim() } else { $env:COMPUTERNAME }
 $letter = if ($cfg.Count -ge 4 -and $cfg[3].Trim() -match '^[a-ln-z]$') { $cfg[3].Trim() } else { 'w' }
 . "$PSScriptRoot\dialog.ps1"
+# the `language` file next to `telegram`: zh-TW (or zh) for Traditional Chinese, else English
+$langWord = try { (Get-Content "$env:HERDR_PLUGIN_CONFIG_DIR\language" -TotalCount 1 -ErrorAction Stop).Trim() } catch { '' }
+$lang = if ($langWord -eq 'zh-TW' -or $langWord -eq 'zh') { 'zh' } else { 'en' }
 # Windows PowerShell 5.1 does not offer TLS 1.2 by default, and api.telegram.org requires it
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -34,7 +37,8 @@ function Send([string]$text, [bool]$html) {
 }
 
 $pane = $env:HERDR_PANE_ID
-$head = "agent $pane 需要你"; $meta = ''; $body = ''; $markup = ''
+$DialogLang = $lang
+$head = "agent $pane " + (L '需要你' 'needs you'); $meta = ''; $body = ''; $markup = ''
 $info = try { Invoke-Herdr agent get $pane } catch { $null }
 if ($info) {
   $a = ($info | ConvertFrom-Json).result.agent
@@ -42,17 +46,21 @@ if ($info) {
   if ($a.agent_status -ne 'blocked') { exit 0 }
   $tabs = Invoke-Herdr tab list --workspace $a.workspace_id
   $label = if ($tabs) { (($tabs | ConvertFrom-Json).result.tabs | Where-Object { $_.tab_id -eq $a.tab_id }).label }
-  $where = '分頁 ' + $(if ($label) { $label } else { $a.tab_id }) + $(if ($a.cwd) { ' · ' + (Split-Path $a.cwd -Leaf) } else { '' })
+  $where = (L '分頁 ' 'tab ') + $(if ($label) { $label } else { $a.tab_id }) + $(if ($a.cwd) { ' · ' + (Split-Path $a.cwd -Leaf) } else { '' })
   $meta = Esc ((@($a.terminal_title_stripped, $where) | Where-Object { $_ }) -join "`n")
   $screen = Invoke-Herdr agent read $pane --source visible
   if ($screen) {
     $lines = $screen -split "`r?`n"
+    # the fingerprint is taken from the default wording, so it does not depend on the language
+    # setting of either machine
+    $DialogLang = ''
+    $fp = Get-Fingerprint @(Format-Dialog $lines)
+    $DialogLang = $lang
     $d = @(Format-Dialog $lines)
     if ($d.Count -eq 2) {
       $head, $body = $d
       # one button per option: a1|machine|pane|option|fingerprint (machine = $letter; see the listener);
-      # option "t" is the Tab that leaves a multi-select question
-      $fp = Get-Fingerprint $d
+      # option "t" is "done with this multi-select question"
       $rows = foreach ($o in @(Get-DialogOptions $lines)) {
         $cb = "a1|$letter|$pane|$(($o -split '\.')[0])|$fp"
         '[{"text":' + (ConvertTo-Json ($o -replace '^t\. ', '')) + ',"callback_data":' + (ConvertTo-Json $cb) + '}]'
@@ -69,7 +77,7 @@ function Html {
     $(if ($body.EndsWith('</blockquote>')) { "`n" } else { "`n`n" }) + (Esc $machine)
 }
 # Telegram caps a message at 4096 characters
-if ((Html).Length -gt 4000) { $body = '（內容太長，請到電腦上看）' }
+if ((Html).Length -gt 4000) { $body = L '（內容太長，請到電腦上看）' '(Too long to show here; see it on the computer)' }
 $html = Html
 # if the HTML or the buttons get rejected, still get the message itself through
 if (-not (Send $html $true)) {

@@ -23,14 +23,20 @@ M = [
     ("awk: tab bar not joined", "dialog.awk", 'gsub(/  +/, " · ", t)', 't = t'),
     ("awk: [tag] counts as a box", "dialog.awk", r'function boxed(t) { return t ~ /^[0-9]+\. \[( |✔)\] / }', r'function boxed(t) { return t ~ /^[0-9]+\. \[/ }'),
     ("awk: typed row a button", "dialog.awk", 'if (multi && navrow(t)) { keep[k] = 0; continue }', 'if (multi && navrow(t)) continue'),
-    ("awk: typed row unmarked", "dialog.awk", 'if (!skip) desc = "（你打的字）"', 'if (0) desc = ""'),
+    ("awk: typed row unmarked", "dialog.awk", 'if (!skip) desc = L("（你打的字）", "(what you typed)")', 'if (0) desc = ""'),
+    ("awk: English ignored", "dialog.awk", 'function L(zh, en) { return lang == "en" ? en : zh }', 'function L(zh, en) { return zh }'),
+    ("awk: English by default", "dialog.awk", 'function L(zh, en) { return lang == "en" ? en : zh }', 'function L(zh, en) { return lang == "zh" ? zh : en }'),
     ("listener: no cursor walk", "listener/listener.py", 'return move(cursor, to) + (("enter",) if option == "t" else (option,))', 'return (("enter",) if option == "t" else (option,))'),
     ("listener: walk on single choice", "listener/listener.py", '    if not multi_select(rows):\n        return (option,)\n    want', '    want'),
     ("listener: done sends Tab", "listener/listener.py", '(("enter",) if option == "t" else (option,))', '(("tab",) if option == "t" else (option,))'),
     ("listener: [tag] counts as a box", "listener/listener.py", r'BOX = re.compile(r"\[(?: |✔)\] ")', r'BOX = re.compile(r"\[")'),
     ("listener: second typing allowed", "listener/listener.py", 'if not rows[nav - 1][1].endswith("Type something"):', 'if False:'),
     ("listener: Enter after typing", "listener/listener.py", 'return Decision(True, keys=move(cursor, nav - 1), enter=False)', 'return Decision(True, keys=move(cursor, nav - 1))'),
-    ("listener: old button edits", "listener/listener.py", 'return "畫面已經變了", True', 'return "畫面已經變了", False'),
+    ("listener: old button edits", "listener/listener.py", 'return "changed", True', 'return "changed", False'),
+    ("listener: language always zh", "listener/listener.py", 'return "zh-TW" if word in ("zh-TW", "zh") else "en"', 'return "zh-TW"'),
+    ("listener: missing file not en", "listener/listener.py", '    except OSError:\n        return "en"', '    except OSError:\n        return "zh-TW"'),
+    ("listener: render w/o config dir", "listener/listener.py", '"HERDR_PLUGIN_CONFIG_DIR": str(CONFIG_DIR or "")', '"HERDR_PLUGIN_CONFIG_DIR": ""'),
+    ("listener: options ignore language", "listener/listener.py", '"-v", "part=options", "-v", f"lang={LANG}"', '"-v", "part=options"'),
     ("listener: unchanged = answered", "listener/listener.py", '    return "same"\n', '    return "done"\n'),
     ("listener: herdr timeout raises", "listener/listener.py", '        except subprocess.TimeoutExpired:\n            return None  # read', '        except ZeroDivisionError:\n            return None  # read'),
     ("listener: no redraw on change", "listener/listener.py", 'return "next" if dialog_options(screen) else "done"', 'return "done"'),
@@ -42,9 +48,9 @@ M = [
     ("listener: no pause", "listener/listener.py", 'STEP_READS, STEP_PAUSE = 5, 0.4', 'STEP_READS, STEP_PAUSE = 5, 0'),
     ("listener: 4 reads", "listener/listener.py", 'STEP_READS, STEP_PAUSE = 5, 0.4', 'STEP_READS, STEP_PAUSE = 4, 0.4'),
     ("listener: 1 read", "listener/listener.py", 'STEP_READS, STEP_PAUSE = 5, 0.4', 'STEP_READS, STEP_PAUSE = 1, 0.4'),
-    ("listener: Cancel = answered", "listener/listener.py", '"Cancel": "已取消，沒有送出答案"', '"Kancel": "已取消，沒有送出答案"'),
-    ("listener: untick = tick", "listener/listener.py", "'已勾' if m[1] == ' ' else '已取消勾選'", "'已勾'"),
-    ("listener: typed text trimmed", "listener/listener.py", 'done = f"已送出：{label}" if typed else pressed(label)', 'done = pressed(label)'),
+    ("listener: Cancel = answered", "listener/listener.py", '"Cancel": "cancelled"', '"Kancel": "cancelled"'),
+    ("listener: untick = tick", "listener/listener.py", '"ticked" if m[1] == " " else "unticked"', '"ticked"'),
+    ("listener: typed text trimmed", "listener/listener.py", 'done = t("sent", label) if typed else pressed(label)', 'done = pressed(label)'),
     ("listener: redrawn = answered", "listener/listener.py", '            tg.answer_callback(cq["id"], pressed(d.label))\n            return', '            tg.answer_callback(cq["id"], pressed(d.label))'),
     ("listener: rejected redraw raises", "listener/listener.py", 'except (urllib.error.URLError, OSError, ValueError):\n        pass', 'except ZeroDivisionError:\n        pass'),
     ("listener: no t in callback", "listener/listener.py", r'([0-9]{1,2}|t)', r'([0-9]{1,2})'),
@@ -60,6 +66,10 @@ M = [
     ("install.sh: settings world-readable", "install.sh", "(umask 077; printf", "(printf"),
     ("install.sh: chat id from wrong field", "install.sh", ".message.chat.id // empty", ".message.from.id // empty"),
     ("install.sh: test message skipped", "install.sh", "api sendMessage -d chat_id=", "false && api sendMessage -d chat_id="),
+    ("notify.sh: fp in display words", "notify.sh", 'fp=$(printf \'%s\\n\' "$screen" | awk -f', 'fp=$(printf \'%s\\n\' "$screen" | awk -v lang="$lang" -f'),
+    ("notify.sh: language ignored", "notify.sh", 'zh-TW | zh) lang=zh ;;', 'zh-TW | zh) lang=en ;;'),
+    ("notify.sh: Chinese by default", "notify.sh", '  *) lang=en ;;', '  *) lang=zh ;;'),
+    ("install.sh: Chinese by default", "install.sh", '*) answer=en ;;', '*) answer=zh-TW ;;'),
     ("notify.sh: render sends", "notify.sh", "if [ -n \"${NOTIFY_RENDER:-}\" ]; then printf '%s\\n' \"${markup:-}\"; html; exit 0; fi", ":"),
 ]
 
@@ -86,9 +96,13 @@ def main():
             open(f, "w", encoding="utf-8").write(text.replace(old, new))
         g, gout = run(r, "sh tests/run.sh")
         i, iout = run(r, "sh tests/install_test.sh")
-        p, pout = run(os.path.join(r, "listener"), "uv run --no-project --with pytest pytest -q -p no:cacheprovider")
+        pytest = "uv run --no-project --with pytest pytest -q -p no:cacheprovider"
+        p, pout = run(os.path.join(r, "listener"), pytest)
+        if p not in (0, 1):  # uv itself exits 2 when it cannot reach the package index: try once more
+            p, pout = run(os.path.join(r, "listener"), pytest)
         if p not in (0, 1):
-            res = f"INVALID (pytest exit {p})"
+            last = (pout.strip().splitlines() or [""])[-1][:80]
+            res = f"INVALID (pytest exit {p}: {last})"
         elif path is None:
             res = "green" if g == 0 and i == 0 and p == 0 else f"baseline not green golden={g} install={i} pytest={p}"
         else:

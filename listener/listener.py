@@ -34,6 +34,49 @@ CALLBACK = re.compile(r"a1\|([a-z])\|([A-Za-z0-9]+:[A-Za-z0-9]+)\|([0-9]{1,2}|t)
 # a whole two-question round in `herdr plugin log list`). herdr's reading of the screen may lag
 # behind the key (a guess), so read up to 5 times, 0.4 s apart, before calling the screen unchanged
 STEP_READS, STEP_PAUSE = 5, 0.4
+# set by main() from the plugin config directory; notify.sh reads the same `language` file there
+CONFIG_DIR = None
+LANG = "en"
+# what the listener says, per language ({x}: a button label or typed text)
+MESSAGES = {
+    "zh-TW": {
+        "gone": "agent 已經不在等你", "unreadable": "讀不到畫面", "changed": "畫面已經變了",
+        "not_a_button": "這個選項不能從手機按", "no_cursor": "看不出游標在哪，請到電腦上操作",
+        "typed_once": "這題已經打過字了，要改請到電腦上", "no_typing": "這個問題不能打字回答，請用按鈕",
+        "ticked": "已勾：{x}", "unticked": "已取消勾選：{x}", "pressed": "已按：{x}",
+        "submitted": "已送出答案", "cancelled": "已取消，沒有送出答案", "answered": "已回答：{x}",
+        "sent": "已送出：{x}", "unchanged": "{x}；畫面還沒變，請到電腦上確認",
+        "see_computer": "{x}；下一步請到電腦上看", "not_sent": "沒送出：{x}",
+        "bad_button": "看不懂這顆按鈕", "already": "這則已經回答過了",
+        "how_to_reply": "要回答 agent，請對那則通知按「回覆」再打字。",
+    },
+    "en": {
+        "gone": "the agent is no longer waiting", "unreadable": "could not read the screen",
+        "changed": "the screen has changed", "not_a_button": "this option can't be pressed from the phone",
+        "no_cursor": "can't tell where the cursor is; use the computer",
+        "typed_once": "text was already typed here; change it on the computer",
+        "no_typing": "this question takes no typed answer; use the buttons",
+        "ticked": "Ticked: {x}", "unticked": "Unticked: {x}", "pressed": "Pressed: {x}",
+        "submitted": "Answers submitted", "cancelled": "Cancelled; no answers sent", "answered": "Answered: {x}",
+        "sent": "Sent: {x}", "unchanged": "{x}; the screen hasn't changed yet, check on the computer",
+        "see_computer": "{x}; see the next step on the computer", "not_sent": "Not sent: {x}",
+        "bad_button": "unknown button", "already": "already answered",
+        "how_to_reply": "To answer an agent, reply to its notification.",
+    },
+}
+
+
+def t(key, x=""):
+    return MESSAGES[LANG][key].replace("{x}", x)
+
+
+def read_language(config_dir):
+    """The `language` file: "zh-TW" (or "zh") for Traditional Chinese, anything else English."""
+    try:
+        word = (Path(config_dir) / "language").read_text(encoding="utf-8").strip()
+    except OSError:
+        return "en"
+    return "zh-TW" if word in ("zh-TW", "zh") else "en"
 
 
 @dataclass(frozen=True)
@@ -79,7 +122,8 @@ def format_dialog(screen):
 
 
 def dialog_options(screen):
-    return [line for line in _awk(screen, "-v", "part=options").splitlines() if line]
+    # worded in LANG (only "t." has words of its own); fingerprints use format_dialog's default
+    return [line for line in _awk(screen, "-v", "part=options", "-v", f"lang={LANG}").splitlines() if line]
 
 
 def fingerprint(dialog):
@@ -91,12 +135,12 @@ def stale(target, status, screen):
     """Why the agent is no longer waiting on the dialog the notification showed (and whether the
     message should stay as it is), or None."""
     if status != "blocked":
-        return "agent 已經不在等你", False
+        return "gone", False
     if screen is None:
-        return "讀不到畫面", True
+        return "unreadable", True
     if fingerprint(format_dialog(screen)) != target.fp:
         # a button from before a redraw: the message already shows the newer screen
-        return "畫面已經變了", True
+        return "changed", True
     return None
 
 
@@ -147,13 +191,13 @@ def press(option, screen):
 
 def decide(target, status, screen):
     if refused := stale(target, status, screen):
-        return Decision(False, reason=refused[0], keep=refused[1])
+        return Decision(False, reason=t(refused[0]), keep=refused[1])
     label = next((o for o in dialog_options(screen) if o.startswith(f"{target.option}. ")), None)
     if label is None:
-        return Decision(False, reason="這個選項不能從手機按")
+        return Decision(False, reason=t("not_a_button"))
     keys = press(target.option, screen)
     if keys is None:
-        return Decision(False, reason="看不出游標在哪，請到電腦上按", keep=True)
+        return Decision(False, reason=t("no_cursor"), keep=True)
     return Decision(True, keys=keys, label=label)
 
 
@@ -178,14 +222,14 @@ def after_key(target, herdr):
 def pressed(label):
     """What a tap on a button did, in words: a box ticks or unticks, anything else is pressed."""
     if m := re.match(r"[0-9]+\. \[( |✔)\] ", label):
-        return f"{'已勾' if m[1] == ' ' else '已取消勾選'}：{short_label(label)}"
-    return f"已按：{short_label(label)}"
+        return t("ticked" if m[1] == " " else "unticked", short_label(label))
+    return t("pressed", short_label(label))
 
 
 def answered_note(label):
     # the review page's two buttons end the questions in opposite ways
-    return {"Submit answers": "已送出答案", "Cancel": "已取消，沒有送出答案"}.get(
-        re.sub(r"^[0-9]+\. ", "", label), f"已回答：{label}")
+    end = {"Submit answers": "submitted", "Cancel": "cancelled"}.get(re.sub(r"^[0-9]+\. ", "", label))
+    return t(end) if end else t("answered", label)
 
 
 def follow_up(target, label, herdr, tg, chat_id, message_id, typed=False):
@@ -193,10 +237,10 @@ def follow_up(target, label, herdr, tg, chat_id, message_id, typed=False):
     the note to append to it (and its buttons go). label: the button's, or the typed text."""
     state = after_key(target, herdr)
     if state == "done":
-        return f"已回答：{label}" if typed else answered_note(label)
-    done = f"已送出：{label}" if typed else pressed(label)
+        return t("answered", label) if typed else answered_note(label)
+    done = t("sent", label) if typed else pressed(label)
     if state == "same":
-        return f"{done}；畫面還沒變，請到電腦上確認"
+        return t("unchanged", done)
     try:
         page = herdr.render(target)
         if page and page[1]:
@@ -204,7 +248,7 @@ def follow_up(target, label, herdr, tg, chat_id, message_id, typed=False):
             return None
     except (urllib.error.URLError, OSError, ValueError):
         pass
-    return f"{done}；下一步請到電腦上看"
+    return t("see_computer", done)
 
 
 TYPE_OPTION = re.compile(r"^\s*(?:❯\s*)?([0-9]+)\. Type something", re.M)
@@ -222,20 +266,20 @@ def clean_text(text):
 
 def decide_text(target, status, screen):
     if refused := stale(target, status, screen):
-        return Decision(False, reason=refused[0])
+        return Decision(False, reason=t(refused[0]))
     rows, cursor = layout(screen)
     if multi_select(rows):
         # type straight into the free-text row (its box ticks itself); no Enter, so the question
         # stays open for more boxes
         nav = next((i for i, (row, _) in enumerate(rows) if row in NAV), None)
         if cursor is None or not nav:
-            return Decision(False, reason="看不出游標在哪，請到電腦上打")
+            return Decision(False, reason=t("no_cursor"))
         if not rows[nav - 1][1].endswith("Type something"):
-            return Decision(False, reason="這題已經打過字了，要改請到電腦上")
+            return Decision(False, reason=t("typed_once"))
         return Decision(True, keys=move(cursor, nav - 1), enter=False)
     n = type_option(screen)
     if n is None:
-        return Decision(False, reason="這個問題不能打字回答，請用按鈕")
+        return Decision(False, reason=t("no_typing"))
     return Decision(True, keys=(str(n),))
 
 
@@ -251,11 +295,11 @@ def handle_update(update, owner_id, herdr, tg, answered=None):
     msg = cq.get("message") or {}
     target = parse_callback(cq.get("data"))
     if target is None:
-        tg.answer_callback(cq["id"], "看不懂這顆按鈕")
+        tg.answer_callback(cq["id"], t("bad_button"))
         return
     key = (msg.get("chat", {}).get("id"), msg.get("message_id"))
     if key in answered:
-        tg.answer_callback(cq["id"], "這則已經回答過了")
+        tg.answer_callback(cq["id"], t("already"))
         return
     d = decide(target, herdr.status(target), herdr.screen(target))
     if d.send:
@@ -267,7 +311,7 @@ def handle_update(update, owner_id, herdr, tg, answered=None):
             return
         answered.add(key)
     else:
-        note = f"沒送出：{d.reason}"
+        note = t("not_sent", d.reason)
     tg.answer_callback(cq["id"], note)
     if d.keep:
         return
@@ -282,18 +326,18 @@ def handle_reply(msg, owner_id, herdr, tg, answered):
         return
     chat_id, original = msg["chat"]["id"], msg.get("reply_to_message") or {}
     if (chat_id, original.get("message_id")) in answered:
-        tg.send_message(chat_id, "這則已經回答過了。", msg.get("message_id"))
+        tg.send_message(chat_id, t("already"), msg.get("message_id"))
         return
     # the notification's own buttons say which agent and which dialog it was about
     rows = (original.get("reply_markup") or {}).get("inline_keyboard") or [[{}]]
     target = parse_callback(rows[0][0].get("callback_data"))
     text = clean_text(msg.get("text"))
     if target is None or not text:
-        tg.send_message(chat_id, "要回答 agent，請對那則通知按「回覆」再打字。", msg.get("message_id"))
+        tg.send_message(chat_id, t("how_to_reply"), msg.get("message_id"))
         return
     d = decide_text(target, herdr.status(target), herdr.screen(target))
     if not d.send:
-        tg.send_message(chat_id, f"沒送出：{d.reason}", msg.get("message_id"))
+        tg.send_message(chat_id, t("not_sent", d.reason), msg.get("message_id"))
         return
     if d.keys:
         herdr.send_keys(target, *d.keys)
@@ -336,7 +380,8 @@ class Herdr:
         None if the agent is no longer blocked."""
         extra = MACHINES[target.machine]
         env = {**os.environ, "NOTIFY_RENDER": "1", "HERDR_PANE_ID": target.pane,
-               "NOTIFY_LETTER": target.machine, "NOTIFY_HERDR_MACHINE": extra[1] if extra else ""}
+               "NOTIFY_LETTER": target.machine, "NOTIFY_HERDR_MACHINE": extra[1] if extra else "",
+               "HERDR_PLUGIN_CONFIG_DIR": str(CONFIG_DIR or "")}
         try:
             r = subprocess.run(["sh", str(NOTIFY_SH)], env=env, capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired:
@@ -380,12 +425,13 @@ def log(token, *parts):
 
 
 def main():
-    global MACHINES
+    global MACHINES, CONFIG_DIR, LANG
     config = Path(subprocess.run(["herdr", "plugin", "config-dir", PLUGIN_ID], capture_output=True, text=True,
                                  check=True, timeout=30).stdout.strip())
     token, chat = (line.strip() for line in (config / "telegram").read_text(encoding="utf-8").splitlines()[:2])
     if (config / "machines").exists():
         MACHINES = parse_machines((config / "machines").read_text(encoding="utf-8"))
+    CONFIG_DIR, LANG = config, read_language(config)
     tg, herdr, offset, answered = Telegram(token), Herdr(), None, set()
     # launchd starts us with a bare environment (no login shell, no ssh agent); say up front
     # whether every machine's herdr is reachable

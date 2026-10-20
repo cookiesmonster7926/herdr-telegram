@@ -22,8 +22,6 @@ and answer it from your phone with one tap.
 Buttons are built for Claude Code's dialogs (tested with Claude Code 2.1.304 and herdr 0.9.3).
 For other agents you still get the notification with the screen text, without buttons.
 
-> The Telegram messages are in Traditional Chinese for now.
-
 ## Requirements
 
 - macOS with [herdr](https://herdr.dev) 0.9 or later
@@ -54,6 +52,18 @@ background (it also starts at login), and sends you a test message. That's it.
 - **Uninstall:** `./install.sh --uninstall` (your settings are kept)
 - Keep the folder where it is: the listener runs from it.
 
+## Language
+
+Messages come in **English** or **Traditional Chinese**; `install.sh` asks (English if you just
+press Enter). To change it later, write `en` or `zh-TW` into the file `language` in
+`herdr plugin config-dir herdr-telegram`, then run `./install.sh` again.
+
+Only the words herdr-telegram adds are translated: the headline ("Waiting for your answer:"), the
+"Done with this question →" button and notes such as "Answers submitted". The question, its options
+and the command are shown exactly as the agent wrote them, in whatever language it used, and words
+drawn by Claude Code itself ("Submit answers", "Yes", "Type something") stay as they are. So an
+English setting with a question asked in Chinese shows an English headline over the Chinese question.
+
 ## Windows (optional)
 
 Notifications work on Windows too (PowerShell 5.1). The buttons are answered by the listener on your
@@ -72,7 +82,8 @@ Mac, which reaches the Windows machine through herdr's remote machines.
    <optional: name shown at the bottom of messages, e.g. Lab PC>
    <optional: one letter for this machine, default w>
    ```
-   Your chat id is the second line of the same file on your Mac.
+   Your chat id is the second line of the same file on your Mac. For Chinese messages, also create a
+   file `language` there containing `zh-TW`. The two machines may use different languages.
 3. On the Mac, make sure `herdr --machine <label> agent list` works for that machine
    (see `herdr machine add`). Then add the machine to the file `machines` in the Mac's
    `herdr plugin config-dir herdr-telegram`, one line per machine:

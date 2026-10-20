@@ -1,5 +1,9 @@
 ﻿# Turns a herdr "visible" snapshot of a blocked agent into Telegram HTML (port of dialog.awk).
 # Format-Dialog returns the headline (already escaped) and the message body.
+# $DialogLang = 'en' words the parts this script adds in English (dialog.awk's -v lang=en); the
+# screen's own text is never translated. Unset: Traditional Chinese, which fingerprints use.
+$DialogLang = ''
+function L([string]$zh, [string]$en) { if ($script:DialogLang -eq 'en') { $en } else { $zh } }
 function Esc([string]$s) { $s.Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;') }
 function Unbar([string]$s) { $s.Trim() -replace '^│ ?', '' -replace '^❯ *', '' }
 # Claude Code wraps text to the pane width itself, so glue continuation lines back together
@@ -49,7 +53,7 @@ function Get-DialogOptions([string[]]$screen) {
     $opts.Add(@{ t = $t; keep = -not ($t -cmatch 'ask again|[Aa]lways' -or (Test-Freeform $t)) })
   }
   foreach ($o in $opts) { if ($o.keep) { $o.t } }
-  if ($multi) { 't. 這題選好了 →' }
+  if ($multi) { 't. ' + (L '這題選好了 →' 'Done with this question →') }
 }
 
 # first 8 hex digits of the MD5 of the formatted dialog (lines joined by "\n"); the buttons carry
@@ -93,7 +97,7 @@ function Format-Permission([string[]]$lines) {
   if ($desc) { $body += Esc $desc }
   if ($cmd.Count) { $body += '<pre>' + (Esc ($cmd -join "`n")) + '</pre>' }
   if ($reason) { $body += '<blockquote expandable>' + (Esc $reason) + '</blockquote>' }
-  ('等你批准：' + (Esc $lines[0].Trim())), ($body -join "`n")
+  ((L '等你批准：' 'Needs your approval: ') + (Esc $lines[0].Trim())), ($body -join "`n")
 }
 
 function Format-Choice([string[]]$lines) {
@@ -111,7 +115,7 @@ function Format-Choice([string[]]$lines) {
       $cur = @{ opt = $t; desc = ''; skip = Test-Freeform $t }
       $opts.Add($cur)
     } elseif ($cur -and (Test-Boxed $cur.opt) -and (Test-NavRow $t)) {
-      if (-not $cur.skip) { $cur.desc = '（你打的字）' }; continue
+      if (-not $cur.skip) { $cur.desc = L '（你打的字）' '(what you typed)' }; continue
     } elseif ($review -and $t -ceq 'Ready to submit your answers?') { continue }
     elseif ($review -and -not $cur -and $t -match '^(●|→)') { $q = $(if ($q) { "$q`n$t" } else { $t }) }
     elseif (-not $cur) { $q = Glue $q $t }
@@ -122,10 +126,10 @@ function Format-Choice([string[]]$lines) {
   }
   # frame the question and its options in one quote box
   $intro = if ($q) { (Esc $q) + "`n`n" } else { "`n" }
-  $(if ($review) { '等你確認答案' } else { '等你回答：' + (Esc $head) }),
+  $(if ($review) { L '等你確認答案' 'Confirm your answers' } else { (L '等你回答：' 'Waiting for your answer: ') + (Esc $head) }),
     ('<blockquote>' + $intro + (@($items) -join "`n`n") + '</blockquote>')
 }
 
 function Format-Generic([string[]]$lines) {
-  '等你處理', ('<blockquote expandable>' + (Esc ((@($lines | ForEach-Object { Unbar $_ })) -join "`n")) + '</blockquote>')
+  (L '等你處理' 'Waiting for you'), ('<blockquote expandable>' + (Esc ((@($lines | ForEach-Object { Unbar $_ })) -join "`n")) + '</blockquote>')
 }
