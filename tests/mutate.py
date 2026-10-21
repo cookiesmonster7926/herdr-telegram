@@ -71,13 +71,34 @@ M = [
     ("notify.sh: Chinese by default", "notify.sh", '  *) lang=en ;;', '  *) lang=zh ;;'),
     ("install.sh: Chinese by default", "install.sh", '*) answer=en ;;', '*) answer=zh-TW ;;'),
     ("notify.sh: render sends", "notify.sh", "if [ -n \"${NOTIFY_RENDER:-}\" ]; then printf '%s\\n' \"${markup:-}\"; html; exit 0; fi", ":"),
+    ("notify.sh: leaving ignored", "notify.sh", '*) [ -f "$sent" ] || exit 0; leaving=1 ;;', '*) exit 0 ;;'),
+    ("notify.sh: message forgotten", "notify.sh", 'printf \'%s\\n\' "$id" > "$sent"', 'true'),
+    ("notify.sh: sent file kept", "notify.sh", 'id=$(cat "$sent"); rm -f "$sent"', 'id=$(cat "$sent")'),
+    ("notify.sh: no note", "notify.sh", '{ read -r body && printf', '{ false && printf'),
+    ("notify.sh: phone note overwritten", "notify.sh", "'select(.ok) | .result", "'select(true) | .result"),
+    ("notify.sh: note w/o language", "notify.sh", "$(L 'agent 已經不在等你了' 'The agent is no longer waiting')", "agent 已經不在等你了"),
+    ("notify.sh: formatting dropped", "notify.sh", 'entities: (.entities // [])}', 'entities: []}'),
+    ("notify.sh: no second look", "notify.sh", '[ -n "$now" ] && [ "$now" != blocked ] && unbutton 0', ':'),
+    ("notify.sh: second look always", "notify.sh", '[ -n "$now" ] && [ "$now" != blocked ] && unbutton 0', 'unbutton 0'),
+    ("notify.sh: second look waits", "notify.sh", '[ "$now" != blocked ] && unbutton 0', '[ "$now" != blocked ] && unbutton 5'),
+    ("notify.sh: stale blocked keeps old", "notify.sh", "= blocked ] || { unbutton 5; exit 0; }", "= blocked ] || exit 0"),
+    ("notify.sh: leaving races the phone", "notify.sh", '[ -n "$leaving" ] && { unbutton 5; exit 0; }', '[ -n "$leaving" ] && { unbutton 0; exit 0; }'),
+    ("notify.sh: wait ignored", "notify.sh", '[ "${1:-0}" -gt 0 ] && sleep "$1"', ':'),
+    ("notify.sh: leaving from env", "notify.sh", 'sent="" leaving=""', 'sent=""'),
+    ("notify.sh: no state dir", "notify.sh", '${HERDR_PLUGIN_STATE_DIR:-$HERDR_PLUGIN_CONFIG_DIR}/sent', '$HERDR_PLUGIN_CONFIG_DIR/sent'),
+    ("notify.sh: no config fallback", "notify.sh", '${HERDR_PLUGIN_STATE_DIR:-$HERDR_PLUGIN_CONFIG_DIR}/sent', '$HERDR_PLUGIN_STATE_DIR/sent'),
+    ("notify.sh: button-less remembered", "notify.sh", '[ -n "$id" ] && [ -n "${markup:-}" ] &&', '[ -n "$id" ] &&'),
+    ("notify.sh: render touches sent", "notify.sh", 'sent="" leaving=""\nif [ -z "${NOTIFY_RENDER:-}" ]; then', 'sent="${HERDR_PLUGIN_STATE_DIR:-$HERDR_PLUGIN_CONFIG_DIR}/sent/${HERDR_PANE_ID%%:*}_${HERDR_PANE_ID#*:}" leaving=""\nif [ -z "${NOTIFY_RENDER:-}" ]; then'),
+    ("listener: late tap aborts", "listener/listener.py", '        except urllib.error.HTTPError:\n            pass', '        except ZeroDivisionError:\n            pass'),
+    ("listener: log w/o reason", "listener/listener.py", '            return f"HTTP {e.code}: {json.load(e).get(\'description\')}"', '            return repr(e)'),
 ]
 
 
 def run(cwd, cmd):
-    # no mutation may reach Telegram (curl honours these; the token is empty in render mode anyway)
+    # no mutation may reach Telegram (curl honours these; the token is empty in render mode anyway).
+    # uv honours them too, so it must not try the package index: offline, from its cache
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "HTTPS_PROXY": "http://127.0.0.1:9",
-           "https_proxy": "http://127.0.0.1:9"}
+           "https_proxy": "http://127.0.0.1:9", "UV_OFFLINE": "1"}
     r = subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True, text=True, env=env, timeout=300)
     return r.returncode, r.stdout + r.stderr
 

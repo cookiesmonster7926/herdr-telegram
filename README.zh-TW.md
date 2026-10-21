@@ -13,6 +13,7 @@
 - **一次問好幾題、複選題、最後的確認頁**都能處理：你每按一下，同一則訊息就地更新（框打勾、換下一題），
   直到送出。
 - **對訊息按「回覆」打字**，就是回答「Type something」。
+- **改在電腦上回答也沒關係**：agent 不再等你之後幾秒，那則訊息的按鈕就會拿掉，並註明 agent 已經不在等你了。
 - 安全措施：
   - 只接受你自己的 chat；
   - agent 畫面上還是同一個對話框時才會送鍵；
@@ -107,6 +108,8 @@ agent 進入 blocked
 - 按鈕依賴 Claude Code 畫對話框的方式。新版改了畫面時，可以用 `tests/capture.py` 錄新的畫面來更新測試。
 - 看背景程式：`tail ~/Library/Logs/herdr-telegram.log`（記按鈕，不記你打的字）。
 - 看 plugin 有沒有跑：`herdr plugin log list`。
+- herdr 給 plugin 的狀態資料夾裡有一個 `sent/`：每個 pane 一個小檔，記著它那則還有按鈕的訊息 id，之後才能把按鈕拿掉
+  （沒有狀態資料夾的舊版 herdr 放在設定資料夾）。
 
 ## 開發
 

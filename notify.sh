@@ -2,9 +2,18 @@
 # The listener runs this too, to redraw a notification after a key (the next question, a ticked
 # box): NOTIFY_RENDER=1 prints the reply markup on line 1 and the message HTML after it instead
 # of sending; NOTIFY_LETTER / NOTIFY_HERDR_MACHINE name another machine's agent (w = the desktop)
+sent="" leaving=""
 if [ -z "${NOTIFY_RENDER:-}" ]; then
+  # this pane's last notification with buttons, by message id, until the agent stops waiting (see
+  # the end); runtime state, so in the state directory where herdr provides one
+  [ -n "${HERDR_PANE_ID:-}" ] &&
+    sent="${HERDR_PLUGIN_STATE_DIR:-$HERDR_PLUGIN_CONFIG_DIR}/sent/$(printf '%s' "$HERDR_PANE_ID" | tr ':' '_')"
   # ponytail: substring match on the event JSON; parse with jq if herdr adds other "blocked" fields
-  case "$HERDR_PLUGIN_EVENT_JSON" in *'"blocked"'*) ;; *) exit 0 ;; esac
+  case "$HERDR_PLUGIN_EVENT_JSON" in
+    *'"blocked"'*) ;;
+    # any other status: the agent is not waiting; most such events have no message to take back
+    *) [ -f "$sent" ] || exit 0; leaving=1 ;;
+  esac
   { read -r token; read -r chat; } < "$HERDR_PLUGIN_CONFIG_DIR/telegram" || exit 0
 fi
 herdr=$(command -v herdr || echo "$HOME/.local/bin/herdr")
@@ -22,10 +31,28 @@ case $(head -n 1 "${HERDR_PLUGIN_CONFIG_DIR:-.}/language" 2>/dev/null | tr -d '[
   *) lang=en ;;
 esac
 L() { if [ "$lang" = en ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
+post() { curl -s -m 10 "https://api.telegram.org/bot$token/$1" -H 'Content-Type: application/json' --data-binary @-; }
+# the agent stopped waiting (answered on the computer, interrupted): its last message loses its
+# buttons and says so. After a tap from the phone the listener takes them off itself, with what
+# was answered; then Telegram refuses ("message is not modified", measured) and that note stays.
+# The listener writes it within about 3 s of the agent moving on (a desktop agent: a 0.4 s pause and
+# two herdr --machine reads of about 1.2 s each), so wait $1 seconds first rather than race it
+unbutton() {
+  [ -f "$sent" ] || return 0
+  id=$(cat "$sent"); rm -f "$sent"
+  case $id in '' | *[!0-9]*) return 0 ;; esac
+  [ "${1:-0}" -gt 0 ] && sleep "$1"
+  jq -n -c --arg chat "$chat" --argjson id "$id" '{chat_id: $chat, message_id: $id, reply_markup: {inline_keyboard: []}}' |
+    post editMessageReplyMarkup |
+    jq -c --arg note "$(L 'agent 已經不在等你了' 'The agent is no longer waiting')" 'select(.ok) | .result
+      | {chat_id: .chat.id, message_id, text: (.text + "\n\n" + $note), entities: (.entities // [])}' 2>/dev/null |
+    { read -r body && printf '%s' "$body" | post editMessageText >/dev/null; }
+}
+[ -n "$leaving" ] && { unbutton 5; exit 0; }
 head="agent $pane $(L 需要你 'needs you')" meta="" body=""
 if info=$(hd agent get "$pane" 2>/dev/null); then
   # the event also fires when leaving blocked; only notify if the agent is blocked right now
-  [ "$(printf '%s' "$info" | jq -r '.result.agent.agent_status')" = blocked ] || exit 0
+  [ "$(printf '%s' "$info" | jq -r '.result.agent.agent_status')" = blocked ] || { unbutton 5; exit 0; }
   ws=$(printf '%s' "$info" | jq -r '.result.agent.workspace_id')
   tab=$(printf '%s' "$info" | jq -r '.result.agent.tab_id')
   cwd=$(printf '%s' "$info" | jq -r '.result.agent.cwd // empty')
@@ -64,6 +91,14 @@ html() {
 if [ -n "${NOTIFY_RENDER:-}" ]; then printf '%s\n' "${markup:-}"; html; exit 0; fi
 plain() { html | sed -e 's/<[^>]*>//g' -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&amp;/\&/g'; }
 # if the HTML or the buttons get rejected, still get the message itself through
-html | send -d parse_mode=HTML "$@" | grep -q '"ok":true' ||
-  plain | send "$@" | grep -q '"ok":true' ||
-  plain | send >/dev/null
+r=$(html | send -d parse_mode=HTML "$@")
+ok() { printf '%s' "$r" | grep -q '"ok":true'; }
+ok || r=$(plain | send "$@")
+ok || r=$(plain | send)
+# a message with buttons is remembered until the agent stops waiting. If that happened while it
+# was on its way, the event found nothing to take back, so look once more now (no tap yet to wait for)
+id=$(printf '%s' "$r" | jq -r '.result.message_id // empty' 2>/dev/null)
+[ -n "$id" ] && [ -n "${markup:-}" ] && [ -n "$sent" ] && mkdir -p "${sent%/*}" && printf '%s\n' "$id" > "$sent" || exit 0
+now=$(hd agent get "$pane" 2>/dev/null | jq -r '.result.agent.agent_status // empty')
+[ -n "$now" ] && [ "$now" != blocked ] && unbutton 0
+exit 0

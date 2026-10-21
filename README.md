@@ -14,6 +14,8 @@ and answer it from your phone with one tap.
 - **Several questions at once, multi-select questions and the final review page** all work: the
   message updates in place as you go (boxes tick, the next question appears) until you submit.
 - **Reply to the message** to type a free-text answer ("Type something").
+- **Answered on the computer instead?** A few seconds after the agent stops waiting, the message
+  loses its buttons and says so.
 - It is careful:
   - only your own chat can press anything;
   - a key is sent only if the agent still shows the exact dialog from the message;
@@ -116,6 +118,9 @@ you tap a button or reply
   `tests/capture.py` records fresh screens to update the tests.
 - Check the listener: `tail ~/Library/Logs/herdr-telegram.log` (taps are logged, typed text is not).
 - Check the plugin ran: `herdr plugin log list`.
+- herdr's state folder for the plugin holds `sent/`: one small file per pane with the id of the
+  message whose buttons are still up, so they can be taken off later (older herdr versions without
+  a state folder: the config folder).
 
 ## Development
 

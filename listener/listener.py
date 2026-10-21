@@ -405,7 +405,12 @@ class Telegram:
             return json.load(r)
 
     def answer_callback(self, callback_id, text):
-        self.call("answerCallbackQuery", callback_query_id=callback_id, text=text)
+        # only the toast over the button. A tap that reaches us late (this Mac was offline) is
+        # refused with "query is too old" (measured), and its message must still say what happened
+        try:
+            self.call("answerCallbackQuery", callback_query_id=callback_id, text=text)
+        except urllib.error.HTTPError:
+            pass
 
     def send_message(self, chat_id, text, reply_to):
         self.call("sendMessage", chat_id=chat_id, text=text, reply_parameters={"message_id": reply_to})
@@ -417,6 +422,16 @@ class Telegram:
     def edit_html(self, chat_id, message_id, html, markup):
         self.call("editMessageText", chat_id=chat_id, message_id=message_id, text=html, parse_mode="HTML",
                   reply_markup=markup)
+
+
+def describe(e):
+    # an HTTPError reads only "Bad Request"; Telegram says why in the body
+    if isinstance(e, urllib.error.HTTPError):
+        try:
+            return f"HTTP {e.code}: {json.load(e).get('description')}"
+        except (ValueError, OSError, AttributeError):
+            pass
+    return repr(e)
 
 
 def log(token, *parts):
@@ -461,7 +476,7 @@ def main():
                 if "callback_query" in u:
                     log(token, "callback", u["callback_query"].get("data"))
             except Exception as e:  # one bad update must not stop the loop
-                log(token, "update", u.get("update_id"), "failed:", repr(e))
+                log(token, "update", u.get("update_id"), "failed:", describe(e))
 
 
 if __name__ == "__main__":

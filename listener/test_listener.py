@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import stat
@@ -330,6 +331,33 @@ def test_a_button_after_the_agent_moved_on_marks_the_message():
     assert "沒送出：agent 已經不在等你" in next(c for c in tg.calls if c[0] == "edit")[3]
 
 
+def telegram_error(code, body):
+    return L.urllib.error.HTTPError("https://api.telegram.org/botX/m", code, "Bad Request", {}, io.BytesIO(body))
+
+
+def test_a_tap_that_arrives_late_still_marks_the_message(monkeypatch):
+    # the Mac was offline for a while; Telegram refuses to show a toast for so old a tap
+    tg, calls = L.Telegram("x"), []
+
+    def call(method, http_timeout=15, **params):
+        calls.append(method)
+        if method == "answerCallbackQuery":
+            raise telegram_error(400, b'{"ok":false,"description":"Bad Request: query is too old"}')
+        return {"ok": True}
+
+    monkeypatch.setattr(tg, "call", call)
+    h = FakeHerdr(status="working", screen_text=screen("choice_wide"))
+    L.handle_update(callback_update(f"a1|m|wC:pE|1|{fp('choice_wide')}"), OWNER, h, tg)
+    assert calls == ["answerCallbackQuery", "editMessageText"]
+
+
+def test_a_failed_update_is_logged_with_telegrams_reason():
+    e = telegram_error(400, b'{"ok":false,"description":"Bad Request: message is not modified"}')
+    assert L.describe(e) == "HTTP 400: Bad Request: message is not modified"
+    assert L.describe(telegram_error(502, b"<html>")) == "<HTTPError 502: 'Bad Request'>"
+    assert L.describe(ValueError("x")) == "ValueError('x')"
+
+
 def test_herdr_that_hangs_reads_as_unknown(monkeypatch):
     def hang(argv, **kw):
         raise L.subprocess.TimeoutExpired(argv, kw.get("timeout"))
@@ -614,7 +642,9 @@ def fake_herdr_bin(tmp_path, screen_name):
     script.write_text(f"""#!/bin/sh
 echo "$*" >> {log}
 case "$*" in
-  *"agent get"*) cat {tmp_path}/agent.json ;;
+  # agent<N>.json, if there is one, answers the Nth "agent get"
+  *"agent get"*) n=$(( $(cat {tmp_path}/gets 2>/dev/null || echo 0) + 1 )); echo $n > {tmp_path}/gets
+    if [ -f {tmp_path}/agent$n.json ]; then cat {tmp_path}/agent$n.json; else cat {tmp_path}/agent.json; fi ;;
   *"tab list"*) cat {tmp_path}/tabs.json ;;
   *"agent read"*) cat {tmp_path}/screen.txt ;;
   *) exit 1 ;;
@@ -669,3 +699,185 @@ def test_render_of_an_agent_that_moved_on_is_nothing(tmp_path, monkeypatch):
     (tmp_path / "agent.json").write_text('{"result":{"agent":{"agent_status":"working"}}}', encoding="utf-8")
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
     assert L.Herdr().render(L.Target("m", "wC:pE", "1", "00000000")) is None
+
+
+# --- notify.sh as the plugin: the message is remembered, and loses its buttons when the agent stops
+# waiting (answered on the computer, interrupted) -------------------------------------------------
+
+UNBUTTONED = {"ok": True, "result": {"message_id": 555, "chat": {"id": 42}, "text": "等你回答：哪個\n\n甲",
+                                     "entities": [{"offset": 0, "length": 5, "type": "bold"}]}}
+NOT_MODIFIED = {"ok": False, "description": "Bad Request: message is not modified: specified new message "
+                "content and reply markup are exactly the same as a current content and reply markup of the message"}
+
+
+def fake_curl_bin(tmp_path, unbutton=UNBUTTONED):
+    # each call: "<method>\t<what came on stdin>" (both the form posts and the JSON posts pipe it),
+    # ended by a record separator because a message has newlines
+    log = tmp_path / "curl.log"
+    (tmp_path / "unbutton.json").write_text(json.dumps(unbutton), encoding="utf-8")
+    script = tmp_path / "curl"
+    script.write_text(f"""#!/bin/sh
+for a; do case $a in https://*) url=$a ;; esac; done
+printf '%s\\t%s\\036' "${{url##*/}}" "$(cat)" >> {log}
+case ${{url##*/}} in
+  sendMessage) echo '{{"ok":true,"result":{{"message_id":555}}}}' ;;
+  editMessageReplyMarkup) cat {tmp_path}/unbutton.json ;;
+  *) echo '{{"ok":true}}' ;;
+esac
+""", encoding="utf-8")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    # sleep goes into the same log, so a test sees whether the plugin waited before a call
+    pause = tmp_path / "sleep"
+    pause.write_text(f"#!/bin/sh\nprintf 'sleep\\t%s\\036' \"$*\" >> {log}\n", encoding="utf-8")
+    pause.chmod(pause.stat().st_mode | stat.S_IEXEC)
+    return log
+
+
+def sent_file(tmp_path):
+    return tmp_path / "state" / "sent" / "wC_pE"
+
+
+def remember(tmp_path, message_id):
+    sent_file(tmp_path).parent.mkdir(parents=True)
+    sent_file(tmp_path).write_text(f"{message_id}\n")
+
+
+def run_plugin(tmp_path, config, status, state=True, **extra):
+    (config / "telegram").write_text("TOKEN\n42\n", encoding="utf-8")
+    env = {**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", "HERDR_PANE_ID": "wC:pE",
+           "HERDR_PLUGIN_CONFIG_DIR": str(config), "NOTIFY_HERDR_MACHINE": REMOTE,
+           "HERDR_PLUGIN_EVENT_JSON": json.dumps({"type": "pane_agent_status_changed", "pane_id": "wC:pE",
+                                                  "workspace_id": "wC", "agent_status": status}), **extra}
+    env.pop("HERDR_PLUGIN_STATE_DIR", None)
+    if state:
+        env["HERDR_PLUGIN_STATE_DIR"] = str(tmp_path / "state")
+    r = L.subprocess.run(["sh", str(L.NOTIFY_SH)], env=env, stdin=L.subprocess.DEVNULL,
+                         capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def curl_calls(log):
+    if not log.exists():
+        return []
+    return [(m, json.loads(b) if b.startswith("{") else b)
+            for m, b in (rec.split("\t", 1) for rec in log.read_text(encoding="utf-8").split("\x1e")[:-1])]
+
+
+def test_a_notification_is_remembered_by_pane_in_the_state_directory(tmp_path, config):
+    fake_herdr_bin(tmp_path, "multi_q1")
+    log = fake_curl_bin(tmp_path)
+    run_plugin(tmp_path, config, "blocked")
+    assert [m for m, _ in curl_calls(log)] == ["sendMessage"]
+    assert sent_file(tmp_path).read_text() == "555\n"
+
+
+def test_without_a_state_directory_it_is_remembered_in_the_config_directory(tmp_path, config):
+    # herdr versions that do not hand plugins a state directory
+    fake_herdr_bin(tmp_path, "multi_q1")
+    fake_curl_bin(tmp_path)
+    run_plugin(tmp_path, config, "blocked", state=False)
+    assert (config / "sent" / "wC_pE").read_text() == "555\n"
+
+
+def test_a_notification_without_buttons_is_not_remembered(tmp_path, config):
+    # nothing to take off later (here herdr cannot say what the agent shows)
+    fake_herdr_bin(tmp_path, "multi_q1")
+    (tmp_path / "agent.json").unlink()
+    log = fake_curl_bin(tmp_path)
+    run_plugin(tmp_path, config, "blocked")
+    assert [m for m, _ in curl_calls(log)] == ["sendMessage"]
+    assert not sent_file(tmp_path).exists()
+
+
+def test_when_the_agent_stops_waiting_its_message_loses_the_buttons(tmp_path, config):
+    herdr_log = fake_herdr_bin(tmp_path, "multi_q1")
+    log = fake_curl_bin(tmp_path)
+    remember(tmp_path, 555)
+    run_plugin(tmp_path, config, "working")
+    calls = curl_calls(log)
+    assert calls == [
+        # first give a tap from the phone time to land its own note
+        ("sleep", "5"),
+        ("editMessageReplyMarkup", {"chat_id": "42", "message_id": 555, "reply_markup": {"inline_keyboard": []}}),
+        ("editMessageText", {"chat_id": 42, "message_id": 555, "text": "等你回答：哪個\n\n甲\n\nagent 已經不在等你了",
+                             "entities": UNBUTTONED["result"]["entities"]}),
+    ]
+    assert not sent_file(tmp_path).exists()
+    # it needs nothing from herdr to do this
+    assert not herdr_log.exists()
+
+
+def test_the_note_follows_the_language(tmp_path, config):
+    (config / "language").write_text("en\n", encoding="utf-8")
+    fake_herdr_bin(tmp_path, "multi_q1")
+    log = fake_curl_bin(tmp_path)
+    remember(tmp_path, 555)
+    run_plugin(tmp_path, config, "idle")
+    assert curl_calls(log)[-1][1]["text"].endswith("\n\nThe agent is no longer waiting")
+
+
+def test_after_a_tap_from_the_phone_the_listeners_note_stays(tmp_path, config):
+    # the listener took the buttons off with its own note; Telegram refuses a second take
+    fake_herdr_bin(tmp_path, "multi_q1")
+    log = fake_curl_bin(tmp_path, unbutton=NOT_MODIFIED)
+    remember(tmp_path, 555)
+    run_plugin(tmp_path, config, "working")
+    assert [m for m, _ in curl_calls(log)] == ["sleep", "editMessageReplyMarkup"]
+    assert not sent_file(tmp_path).exists()
+
+
+def test_a_leftover_leaving_flag_does_not_swallow_a_notification(tmp_path, config):
+    fake_herdr_bin(tmp_path, "multi_q1")
+    log = fake_curl_bin(tmp_path)
+    run_plugin(tmp_path, config, "blocked", leaving="1")
+    assert [m for m, _ in curl_calls(log)] == ["sendMessage"]
+
+
+def test_a_redraw_touches_neither_telegram_nor_the_remembered_message(tmp_path, config):
+    # the listener runs notify.sh in render mode while the agent may be anything
+    fake_herdr_bin(tmp_path, "multi_q1")
+    log = fake_curl_bin(tmp_path)
+    remember(tmp_path, 555)
+    for status in ("working", "blocked"):
+        (tmp_path / "agent.json").write_text(json.dumps({"result": {"agent": {"agent_status": status}}}))
+        run_plugin(tmp_path, config, status, NOTIFY_RENDER="1")
+    assert curl_calls(log) == []
+    assert sent_file(tmp_path).read_text() == "555\n"
+
+
+def test_other_events_with_no_message_cost_nothing(tmp_path, config):
+    herdr_log = fake_herdr_bin(tmp_path, "multi_q1")
+    log = fake_curl_bin(tmp_path)
+    run_plugin(tmp_path, config, "working")
+    assert curl_calls(log) == []
+    assert not herdr_log.exists()
+
+
+def test_answered_on_the_computer_while_the_message_was_on_its_way(tmp_path, config):
+    # the leaving event ran before the message was remembered; the plugin looks once more
+    fake_herdr_bin(tmp_path, "multi_q1")
+    (tmp_path / "agent2.json").write_text('{"result":{"agent":{"agent_status":"working"}}}', encoding="utf-8")
+    log = fake_curl_bin(tmp_path)
+    run_plugin(tmp_path, config, "blocked")
+    # no tap can have come yet, so no waiting
+    assert [m for m, _ in curl_calls(log)] == ["sendMessage", "editMessageReplyMarkup", "editMessageText"]
+    assert not sent_file(tmp_path).exists()
+
+
+def test_still_waiting_after_sending_keeps_the_buttons(tmp_path, config):
+    fake_herdr_bin(tmp_path, "multi_q1")
+    log = fake_curl_bin(tmp_path)
+    run_plugin(tmp_path, config, "blocked")
+    assert [m for m, _ in curl_calls(log)] == ["sendMessage"]
+
+
+def test_a_blocked_event_that_is_already_over_takes_the_old_message_back(tmp_path, config):
+    fake_herdr_bin(tmp_path, "multi_q1")
+    (tmp_path / "agent.json").write_text('{"result":{"agent":{"agent_status":"working"}}}', encoding="utf-8")
+    log = fake_curl_bin(tmp_path)
+    remember(tmp_path, 444)
+    run_plugin(tmp_path, config, "blocked")
+    calls = curl_calls(log)
+    assert [m for m, _ in calls] == ["sleep", "editMessageReplyMarkup", "editMessageText"]
+    assert calls[1][1]["message_id"] == 444
